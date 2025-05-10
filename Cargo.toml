@@ -1,0 +1,18 @@
+[package]
+name = "xdg-desktop-portal-froggy"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+egui-sf2g = "0.3.0"
+egui-file-dialog.git = "https://github.com/jannistpl/egui-file-dialog.git"
+zbus = "5"
+dirs = "6.0.0"
+serde.version = "1"
+serde.features = ["derive"]
+ron = "0.10"
+
+[profile.release]
+lto = "thin"
+panic = "abort"
+strip = "symbols"
