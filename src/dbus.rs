@@ -37,7 +37,7 @@ impl FilePortal {
         _parent_window: &str,
         title: &str,
         options: HashMap<&str, zvariant::Value<'_>>,
-    ) -> ObjectPath {
+    ) -> ObjectPath<'_> {
         let sender = hdr.sender().unwrap();
         let mut sender = sender.to_string();
         sender = sender.strip_prefix(":").unwrap().replace('.', "_");

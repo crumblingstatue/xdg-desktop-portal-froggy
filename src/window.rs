@@ -99,7 +99,7 @@ pub fn update_windows(
             .sf_egui
             .run(&mut win.win, |_rw, ctx| {
                 win.dialog.update(ctx);
-                if win.dialog.state() == DialogState::Cancelled {
+                if *win.dialog.state() == DialogState::Cancelled {
                     dbus::emit_response(conn, win.req.path.clone(), dbus::RePayload::UserCancel)
                         .unwrap();
                     retain = false;
