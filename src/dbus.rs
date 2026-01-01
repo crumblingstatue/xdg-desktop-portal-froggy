@@ -37,14 +37,18 @@ impl FilePortal {
         _parent_window: &str,
         title: &str,
         options: HashMap<&str, zvariant::Value<'_>>,
-    ) -> ObjectPath<'_> {
+    ) -> Result<ObjectPath<'_>, zbus::fdo::Error> {
         let sender = hdr.sender().unwrap();
         let mut sender = sender.to_string();
         sender = sender.strip_prefix(":").unwrap().replace('.', "_");
 
         let token: &str = match options.get("handle_token") {
             Some(zvariant::Value::Str(val)) => val,
-            _ => panic!("Oh crap"),
+            _ => {
+                return Err(zbus::fdo::Error::InvalidArgs(
+                    "Missing handle_token(str)".into(),
+                ));
+            }
         };
         let path = ObjectPath::try_from(format!(
             "/org/freedesktop/portal/desktop/request/{sender}/{token}"
@@ -57,7 +61,7 @@ impl FilePortal {
                 path: path.clone(),
             })
             .unwrap();
-        path
+        Ok(path)
     }
 }
 pub struct RequestPortalFacade;
