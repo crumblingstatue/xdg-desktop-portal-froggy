@@ -23,7 +23,7 @@ fn apply_froggy_style(ctx: &egui::Context) {
     const fn c(r: u8, g: u8, b: u8) -> egui::Color32 {
         egui::Color32::from_rgb(r, g, b)
     }
-    ctx.style_mut(|style| {
+    ctx.global_style_mut(|style| {
         let vis = &mut style.visuals;
         vis.panel_fill = c(123, 170, 0);
         vis.window_fill = c(123, 170, 0);
@@ -97,8 +97,8 @@ pub fn update_windows(
         }
         let di = win
             .sf_egui
-            .run(&mut win.win, |_rw, ctx| {
-                win.dialog.update(ctx);
+            .run(&mut win.win, |_rw, ui| {
+                win.dialog.update(ui);
                 if *win.dialog.state() == DialogState::Cancelled {
                     dbus::emit_response(conn, win.req.path.clone(), dbus::RePayload::UserCancel)
                         .unwrap();
