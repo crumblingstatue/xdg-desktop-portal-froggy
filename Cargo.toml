@@ -6,8 +6,7 @@ rust-version = "1.92"
 
 [dependencies]
 egui-sf2g = "0.7.0"
-egui-file-dialog.git = "https://github.com/crumblingstatue/egui-file-dialog.git"
-egui-file-dialog.branch = "filt-export"
+egui-file-dialog.git = "https://github.com/jannistpl/egui-file-dialog.git"
 zbus = "5"
 dirs = "6.0.0"
 serde.version = "1"
