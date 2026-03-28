@@ -23,10 +23,18 @@ pub fn make_file_portal() -> (FilePortal, std::sync::mpsc::Receiver<Req>) {
 }
 
 #[derive(Debug)]
+pub enum Mode {
+    Open,
+    Save,
+}
+
+#[derive(Debug)]
 pub struct Req {
+    pub mode: Mode,
     pub title: String,
     pub path: ObjectPath<'static>,
     pub filters: Vec<Filter>,
+    pub suggested_save_name: String,
 }
 
 #[derive(Debug)]
@@ -69,6 +77,29 @@ impl FilePortal {
         title: &str,
         options: HashMap<&str, zvariant::Value<'_>>,
     ) -> Result<ObjectPath<'_>, zbus::fdo::Error> {
+        self.fun(hdr, server, title, options, Mode::Open).await
+    }
+    async fn save_file(
+        &self,
+        #[zbus(header)] hdr: Header<'_>,
+        #[zbus(object_server)] server: &ObjectServer,
+        _parent_window: &str,
+        title: &str,
+        options: HashMap<&str, zvariant::Value<'_>>,
+    ) -> Result<ObjectPath<'_>, zbus::fdo::Error> {
+        self.fun(hdr, server, title, options, Mode::Save).await
+    }
+}
+
+impl FilePortal {
+    async fn fun(
+        &self,
+        hdr: Header<'_>,
+        server: &ObjectServer,
+        title: &str,
+        options: HashMap<&str, zvariant::Value<'_>>,
+        mode: Mode,
+    ) -> Result<ObjectPath<'_>, zbus::fdo::Error> {
         let sender = hdr.sender().unwrap();
         let mut sender = sender.to_string();
         sender = sender.strip_prefix(":").unwrap().replace('.', "_");
@@ -90,16 +121,23 @@ impl FilePortal {
         ))
         .unwrap();
         server.at(&path, RequestPortalFacade).await.unwrap();
+        let suggested_save_name = options.get("current_name").map_or_else(String::new, |val| {
+            let name: String = val.clone().try_into().unwrap();
+            name
+        });
         self.sender
             .send(Req {
                 title: title.to_owned(),
                 path: path.clone(),
                 filters,
+                mode,
+                suggested_save_name,
             })
             .unwrap();
         Ok(path)
     }
 }
+
 pub struct RequestPortalFacade;
 
 #[zbus::interface(name = "org.freedesktop.portal.Request")]

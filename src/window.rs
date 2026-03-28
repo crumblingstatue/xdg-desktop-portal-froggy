@@ -1,6 +1,6 @@
 use {
     crate::dbus,
-    egui_file_dialog::{DialogState, FileDialog, FileFilter, Filter},
+    egui_file_dialog::{DialogState, FileDialog, FileFilter, Filter, SaveExtension},
     egui_sf2g::{
         SfEgui, egui,
         sf2g::{
@@ -10,13 +10,14 @@ use {
         },
     },
     std::time::Duration,
+    zbus::zvariant::ObjectPath,
 };
 
 pub struct FileChooserWin {
     dialog: FileDialog,
     win: FBox<RenderWindow>,
     sf_egui: SfEgui,
-    req: dbus::Req,
+    path: ObjectPath<'static>,
 }
 
 fn apply_froggy_style(ctx: &egui::Context) {
@@ -53,6 +54,23 @@ fn apply_froggy_style(ctx: &egui::Context) {
     });
 }
 
+// Naive conversion from a glob pattern to a save extension
+fn conv_patterns_to_save_ext(pats: &[glob::Pattern]) -> String {
+    let mut out = String::new();
+    if let Some(pat) = pats.first() {
+        let s = pat.as_str();
+        for &b in s.as_bytes() {
+            if b.is_ascii_lowercase() {
+                out.push(b as char);
+            }
+        }
+    }
+    if out.is_empty() {
+        out = "unknown".into();
+    }
+    out
+}
+
 pub fn spawn_window(
     mut req: dbus::Req,
     windows: &mut Vec<FileChooserWin>,
@@ -74,33 +92,57 @@ pub fn spawn_window(
     cfg.resizable = false;
     cfg.as_modal = false;
     for filt in req.filters.drain(..) {
-        let filter = Filter::new(move |path: &std::path::Path| {
-            if path.is_dir() {
-                return true;
+        match req.mode {
+            dbus::Mode::Open => {
+                let filter = Filter::new(move |path: &std::path::Path| {
+                    if path.is_dir() {
+                        return true;
+                    }
+                    for pat in &filt.patterns {
+                        if pat.matches_path(path) {
+                            return true;
+                        }
+                    }
+                    false
+                });
+                let file_filt = FileFilter {
+                    id: egui::Id::new(&filt.name),
+                    name: filt.name.clone(),
+                    filter,
+                };
+                cfg.file_filters.push(file_filt);
+                cfg.default_file_filter = Some(filt.name);
             }
-            for pat in &filt.patterns {
-                if pat.matches_path(path) {
-                    return true;
-                }
+            dbus::Mode::Save => {
+                let save_ext = SaveExtension {
+                    id: egui::Id::new(&filt.name),
+                    name: filt.name.clone(),
+                    file_extension: conv_patterns_to_save_ext(&filt.patterns),
+                };
+                cfg.save_extensions.push(save_ext);
+                cfg.default_save_extension = Some(filt.name);
             }
-            false
-        });
-        let file_filt = FileFilter {
-            id: egui::Id::new(&filt.name),
-            name: filt.name.clone(),
-            filter,
-        };
-        cfg.file_filters.push(file_filt);
-        cfg.default_file_filter = Some(filt.name);
+        }
     }
-    dialog.pick_file();
+    match req.mode {
+        dbus::Mode::Open => {
+            dialog.pick_file();
+        }
+        dbus::Mode::Save => {
+            if !req.suggested_save_name.is_empty() {
+                cfg.default_file_name = req.suggested_save_name;
+            }
+            dialog.save_file();
+        }
+    }
+
     let sf_egui = SfEgui::new(&win);
     apply_froggy_style(sf_egui.context());
     windows.push(FileChooserWin {
         dialog,
         win,
         sf_egui,
-        req,
+        path: req.path,
     });
 }
 
@@ -124,14 +166,14 @@ pub fn update_windows(
             .run(&mut win.win, |_rw, ui| {
                 win.dialog.update(ui);
                 if *win.dialog.state() == DialogState::Cancelled {
-                    dbus::emit_response(conn, win.req.path.clone(), dbus::RePayload::UserCancel)
+                    dbus::emit_response(conn, win.path.clone(), dbus::RePayload::UserCancel)
                         .unwrap();
                     retain = false;
                 }
                 if let Some(picked) = win.dialog.take_picked() {
                     dbus::emit_response(
                         conn,
-                        win.req.path.clone(),
+                        win.path.clone(),
                         dbus::RePayload::PickedFiles(vec![picked]),
                     )
                     .unwrap();
@@ -147,7 +189,7 @@ pub fn update_windows(
                 eprintln!("Failed to save config: {e}");
             }
             conn.object_server()
-                .remove::<dbus::RequestPortalFacade, _>(&win.req.path)
+                .remove::<dbus::RequestPortalFacade, _>(&win.path)
                 .unwrap();
         }
         retain
