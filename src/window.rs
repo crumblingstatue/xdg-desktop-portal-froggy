@@ -1,6 +1,6 @@
 use {
     crate::dbus,
-    egui_file_dialog::{DialogState, FileDialog},
+    egui_file_dialog::{DialogState, FileDialog, FileFilter, Filter},
     egui_sf2g::{
         SfEgui, egui,
         sf2g::{
@@ -53,7 +53,11 @@ fn apply_froggy_style(ctx: &egui::Context) {
     });
 }
 
-pub fn spawn_window(req: dbus::Req, windows: &mut Vec<FileChooserWin>, frog_cfg: &crate::Config) {
+pub fn spawn_window(
+    mut req: dbus::Req,
+    windows: &mut Vec<FileChooserWin>,
+    frog_cfg: &crate::Config,
+) {
     let mut win = RenderWindow::new(
         (640, 412),
         &req.title,
@@ -69,6 +73,26 @@ pub fn spawn_window(req: dbus::Req, windows: &mut Vec<FileChooserWin>, frog_cfg:
     cfg.fixed_pos = Some(egui::pos2(0., 0.));
     cfg.resizable = false;
     cfg.as_modal = false;
+    for filt in req.filters.drain(..) {
+        let filter = Filter::new(move |path: &std::path::Path| {
+            if path.is_dir() {
+                return true;
+            }
+            for pat in &filt.patterns {
+                if pat.matches_path(path) {
+                    return true;
+                }
+            }
+            false
+        });
+        let file_filt = FileFilter {
+            id: egui::Id::new(&filt.name),
+            name: filt.name.clone(),
+            filter,
+        };
+        cfg.file_filters.push(file_filt);
+        cfg.default_file_filter = Some(filt.name);
+    }
     dialog.pick_file();
     let sf_egui = SfEgui::new(&win);
     apply_froggy_style(sf_egui.context());

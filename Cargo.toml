@@ -6,12 +6,14 @@ rust-version = "1.92"
 
 [dependencies]
 egui-sf2g = "0.7.0"
-egui-file-dialog = "0.13"
+egui-file-dialog.git = "https://github.com/crumblingstatue/egui-file-dialog.git"
+egui-file-dialog.branch = "filt-export"
 zbus = "5"
 dirs = "6.0.0"
 serde.version = "1"
 serde.features = ["derive"]
 ron = "0.12"
+glob = "0.3"
 
 [profile.release]
 lto = "thin"

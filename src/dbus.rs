@@ -26,7 +26,38 @@ pub fn make_file_portal() -> (FilePortal, std::sync::mpsc::Receiver<Req>) {
 pub struct Req {
     pub title: String,
     pub path: ObjectPath<'static>,
+    pub filters: Vec<Filter>,
 }
+
+#[derive(Debug)]
+pub struct Filter {
+    pub name: String,
+    pub patterns: Vec<glob::Pattern>,
+}
+
+impl Filter {
+    fn from_dbus(filt: DBusFilt) -> Option<Self> {
+        let mut yes = true;
+        let this = Self {
+            name: filt.0,
+            patterns: filt
+                .1
+                .into_iter()
+                .map(|(kind, pat)| {
+                    assert_eq!(kind, 0);
+                    // We already have "All Files" by default
+                    if pat == "*" {
+                        yes = false;
+                    }
+                    glob::Pattern::new(&pat).unwrap()
+                })
+                .collect(),
+        };
+        yes.then_some(this)
+    }
+}
+
+type DBusFilt = (String, Vec<(u32, String)>);
 
 #[zbus::interface(name = "org.freedesktop.portal.FileChooser")]
 impl FilePortal {
@@ -50,6 +81,10 @@ impl FilePortal {
                 ));
             }
         };
+        let filters = options.get("filters").map_or_else(Vec::new, |val| {
+            let filters: Vec<DBusFilt> = val.clone().try_into().unwrap();
+            filters.into_iter().filter_map(Filter::from_dbus).collect()
+        });
         let path = ObjectPath::try_from(format!(
             "/org/freedesktop/portal/desktop/request/{sender}/{token}"
         ))
@@ -59,6 +94,7 @@ impl FilePortal {
             .send(Req {
                 title: title.to_owned(),
                 path: path.clone(),
+                filters,
             })
             .unwrap();
         Ok(path)

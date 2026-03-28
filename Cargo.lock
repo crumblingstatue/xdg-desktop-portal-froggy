@@ -407,8 +407,7 @@ dependencies = [
 [[package]]
 name = "egui-file-dialog"
 version = "0.13.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b530b58f428bcffb58281ad1c3a59ee559ffd2354aa54d5bf1a2ef418fdcebb3"
+source = "git+https://github.com/crumblingstatue/egui-file-dialog.git?branch=filt-export#fe895e6ef26aa1af2bf3038c44fad2297d1bc63a"
 dependencies = [
  "directories",
  "dunce",
@@ -680,6 +679,12 @@ dependencies = [
  "wasip2",
  "wasip3",
 ]
+
+[[package]]
+name = "glob"
+version = "0.3.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0cc23270f6e1808e30a928bdc84dea0b9b4136a8bc82338574f23baf47bbd280"
 
 [[package]]
 name = "glu-sys"
@@ -2009,6 +2014,7 @@ dependencies = [
  "dirs",
  "egui-file-dialog",
  "egui-sf2g",
+ "glob",
  "ron",
  "serde",
  "zbus",
