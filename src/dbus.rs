@@ -32,9 +32,11 @@ pub enum Mode {
 pub struct Req {
     pub mode: Mode,
     pub title: String,
-    pub path: ObjectPath<'static>,
+    pub obj_path: ObjectPath<'static>,
     pub filters: Vec<Filter>,
     pub suggested_save_name: String,
+    /// Path of executable making the request. Can be used to uniquely identify the application
+    pub exe_path: Option<String>,
 }
 
 #[derive(Debug)]
@@ -71,29 +73,54 @@ type DBusFilt = (String, Vec<(u32, String)>);
 impl FilePortal {
     async fn open_file(
         &self,
+        #[zbus(connection)] connection: &zbus::Connection,
         #[zbus(header)] hdr: Header<'_>,
         #[zbus(object_server)] server: &ObjectServer,
         _parent_window: &str,
         title: &str,
         options: HashMap<&str, zvariant::Value<'_>>,
     ) -> Result<ObjectPath<'_>, zbus::fdo::Error> {
-        self.fun(hdr, server, title, options, Mode::Open).await
+        self.fun(connection, hdr, server, title, options, Mode::Open)
+            .await
     }
     async fn save_file(
         &self,
+        #[zbus(connection)] connection: &zbus::Connection,
         #[zbus(header)] hdr: Header<'_>,
         #[zbus(object_server)] server: &ObjectServer,
         _parent_window: &str,
         title: &str,
         options: HashMap<&str, zvariant::Value<'_>>,
     ) -> Result<ObjectPath<'_>, zbus::fdo::Error> {
-        self.fun(hdr, server, title, options, Mode::Save).await
+        self.fun(connection, hdr, server, title, options, Mode::Save)
+            .await
     }
+}
+
+async fn get_pid(connection: &zbus::Connection, sender: &str) -> zbus::Result<u32> {
+    let proxy = zbus::Proxy::new(
+        connection,
+        "org.freedesktop.DBus",
+        "/org/freedesktop/DBus",
+        "org.freedesktop.DBus",
+    )
+    .await?;
+
+    let pid: u32 = proxy.call("GetConnectionUnixProcessID", &(sender)).await?;
+
+    Ok(pid)
+}
+
+fn app_path_from_pid(pid: u32) -> Option<String> {
+    std::fs::read_link(format!("/proc/{pid}/exe"))
+        .ok()
+        .map(|p| p.to_string_lossy().into_owned())
 }
 
 impl FilePortal {
     async fn fun(
         &self,
+        connection: &zbus::Connection,
         hdr: Header<'_>,
         server: &ObjectServer,
         title: &str,
@@ -102,6 +129,17 @@ impl FilePortal {
     ) -> Result<ObjectPath<'_>, zbus::fdo::Error> {
         let sender = hdr.sender().unwrap();
         let mut sender = sender.to_string();
+        let exe_path: Option<String> = {
+            let pid = get_pid(connection, &sender).await;
+            match pid {
+                Ok(pid) => app_path_from_pid(pid),
+                Err(e) => {
+                    eprintln!("{e}");
+                    None
+                }
+            }
+        };
+
         sender = sender.strip_prefix(":").unwrap().replace('.', "_");
 
         let token: &str = match options.get("handle_token") {
@@ -128,10 +166,11 @@ impl FilePortal {
         self.sender
             .send(Req {
                 title: title.to_owned(),
-                path: path.clone(),
+                obj_path: path.clone(),
                 filters,
                 mode,
                 suggested_save_name,
+                exe_path,
             })
             .unwrap();
         Ok(path)

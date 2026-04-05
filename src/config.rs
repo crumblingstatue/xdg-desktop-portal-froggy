@@ -1,4 +1,5 @@
 use {
+    egui_sf2g::egui::ahash::HashMap,
     ron::ser::PrettyConfig,
     serde::{Deserialize, Serialize},
     std::error::Error,
@@ -6,7 +7,7 @@ use {
 
 #[derive(Serialize, Deserialize, Default)]
 pub struct Config {
-    pub file_dia_storage: egui_file_dialog::FileDialogStorage,
+    pub per_app_file_dia_storage: HashMap<String, egui_file_dialog::FileDialogStorage>,
 }
 
 impl Config {

@@ -17,7 +17,8 @@ pub struct FileChooserWin {
     dialog: FileDialog,
     win: FBox<RenderWindow>,
     sf_egui: SfEgui,
-    path: ObjectPath<'static>,
+    obj_path: ObjectPath<'static>,
+    exe_path: Option<String>,
 }
 
 fn apply_froggy_style(ctx: &egui::Context) {
@@ -85,7 +86,11 @@ pub fn spawn_window(
     .unwrap();
     win.set_vertical_sync_enabled(true);
     let mut dialog = FileDialog::new();
-    *dialog.storage_mut() = frog_cfg.file_dia_storage.clone();
+    if let Some(exe_path) = &req.exe_path
+        && let Some(storage) = frog_cfg.per_app_file_dia_storage.get(exe_path)
+    {
+        *dialog.storage_mut() = storage.clone();
+    }
     let cfg = dialog.config_mut();
     cfg.title_bar = false;
     cfg.fixed_pos = Some(egui::pos2(0., 0.));
@@ -142,7 +147,8 @@ pub fn spawn_window(
         dialog,
         win,
         sf_egui,
-        path: req.path,
+        obj_path: req.obj_path,
+        exe_path: req.exe_path,
     });
 }
 
@@ -166,14 +172,14 @@ pub fn update_windows(
             .run(&mut win.win, |_rw, ui| {
                 win.dialog.update(ui);
                 if *win.dialog.state() == DialogState::Cancelled {
-                    dbus::emit_response(conn, win.path.clone(), dbus::RePayload::UserCancel)
+                    dbus::emit_response(conn, win.obj_path.clone(), dbus::RePayload::UserCancel)
                         .unwrap();
                     retain = false;
                 }
                 if let Some(picked) = win.dialog.take_picked() {
                     dbus::emit_response(
                         conn,
-                        win.path.clone(),
+                        win.obj_path.clone(),
                         dbus::RePayload::PickedFiles(vec![picked]),
                     )
                     .unwrap();
@@ -184,12 +190,15 @@ pub fn update_windows(
         win.sf_egui.draw(di, &mut win.win, None);
         win.win.display();
         if !retain {
-            cfg.file_dia_storage = win.dialog.storage_mut().clone();
+            if let Some(exe_path) = &win.exe_path {
+                cfg.per_app_file_dia_storage
+                    .insert(exe_path.clone(), win.dialog.storage_mut().clone());
+            }
             if let Err(e) = cfg.save() {
                 eprintln!("Failed to save config: {e}");
             }
             conn.object_server()
-                .remove::<dbus::RequestPortalFacade, _>(&win.path)
+                .remove::<dbus::RequestPortalFacade, _>(&win.obj_path)
                 .unwrap();
         }
         retain
