@@ -3,6 +3,7 @@ name = "xdg-desktop-portal-froggy"
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.92"
+license = "MIT OR Apache-2.0"
 
 [dependencies]
 egui-sf2g = "0.7.0"
