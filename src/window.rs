@@ -61,7 +61,7 @@ fn conv_patterns_to_save_ext(pats: &[glob::Pattern]) -> String {
     if let Some(pat) = pats.first() {
         let s = pat.as_str();
         for &b in s.as_bytes() {
-            if b.is_ascii_lowercase() {
+            if b.is_ascii_lowercase() || b.is_ascii_digit() {
                 out.push(b as char);
             }
         }
