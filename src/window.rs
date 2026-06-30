@@ -131,7 +131,11 @@ pub fn spawn_window(
     }
     match req.mode {
         dbus::Mode::Open => {
-            dialog.pick_file();
+            if req.dir {
+                dialog.pick_directory();
+            } else {
+                dialog.pick_file();
+            }
         }
         dbus::Mode::Save => {
             if !req.suggested_save_name.is_empty() {

@@ -31,6 +31,8 @@ pub enum Mode {
 #[derive(Debug)]
 pub struct Req {
     pub mode: Mode,
+    /// Whether the thing we want to open is a directory
+    pub dir: bool,
     pub title: String,
     pub obj_path: ObjectPath<'static>,
     pub filters: Vec<Filter>,
@@ -163,12 +165,16 @@ impl FilePortal {
             let name: String = val.clone().try_into().unwrap();
             name
         });
+        let dir = options
+            .get("directory")
+            .is_some_and(|val| val.try_into().unwrap());
         self.sender
             .send(Req {
                 title: title.to_owned(),
                 obj_path: path.clone(),
                 filters,
                 mode,
+                dir,
                 suggested_save_name,
                 exe_path,
             })
