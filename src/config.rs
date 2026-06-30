@@ -1,8 +1,7 @@
 use {
-    egui_sf2g::egui::ahash::HashMap,
     ron::ser::PrettyConfig,
     serde::{Deserialize, Serialize},
-    std::error::Error,
+    std::{collections::HashMap, error::Error},
 };
 
 #[derive(Serialize, Deserialize, Default)]
