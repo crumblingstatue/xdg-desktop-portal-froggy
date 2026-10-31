@@ -6,10 +6,11 @@ rust-version = "1.92"
 license = "MIT OR Apache-2.0"
 
 [dependencies]
-egui-sf2g = "0.8.0"
-egui-file-dialog.git = "https://github.com/jannistpl/egui-file-dialog.git"
-zbus = "5"
-dirs = "6.0.0"
+egui-sf2g.git = "https://github.com/crumblingstatue/egui-sf2g.git"
+egui-file-dialog.git = "https://github.com/mukilan/egui-file-dialog.git"
+egui-file-dialog.rev = "ba313e380d415cc2e26741b2a92fe4fa466679d6"
+zbus = "6.2"
+dirs = "7.0.0"
 serde.version = "1"
 serde.features = ["derive"]
 ron = "0.12"

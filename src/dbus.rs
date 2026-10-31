@@ -4,12 +4,8 @@
 use {
     std::{collections::HashMap, path::PathBuf},
     zbus::{
-        ObjectServer,
-        blocking::connection::Builder,
-        message::Header,
-        names::BusName,
+        ObjectPath, ObjectServer, conn::Builder, message::Header, names::BusName,
         object_server::SignalEmitter,
-        zvariant::{self, ObjectPath},
     },
 };
 
@@ -80,7 +76,7 @@ impl FilePortal {
         #[zbus(object_server)] server: &ObjectServer,
         _parent_window: &str,
         title: &str,
-        options: HashMap<&str, zvariant::Value<'_>>,
+        options: HashMap<&str, zbus::Variant<'_>>,
     ) -> Result<ObjectPath<'_>, zbus::fdo::Error> {
         self.fun(connection, hdr, server, title, options, Mode::Open)
             .await
@@ -92,7 +88,7 @@ impl FilePortal {
         #[zbus(object_server)] server: &ObjectServer,
         _parent_window: &str,
         title: &str,
-        options: HashMap<&str, zvariant::Value<'_>>,
+        options: HashMap<&str, zbus::Variant<'_>>,
     ) -> Result<ObjectPath<'_>, zbus::fdo::Error> {
         self.fun(connection, hdr, server, title, options, Mode::Save)
             .await
@@ -126,7 +122,7 @@ impl FilePortal {
         hdr: Header<'_>,
         server: &ObjectServer,
         title: &str,
-        options: HashMap<&str, zvariant::Value<'_>>,
+        options: HashMap<&str, zbus::Variant<'_>>,
         mode: Mode,
     ) -> Result<ObjectPath<'_>, zbus::fdo::Error> {
         let sender = hdr.sender().unwrap();
@@ -145,7 +141,7 @@ impl FilePortal {
         sender = sender.strip_prefix(":").unwrap().replace('.', "_");
 
         let token: &str = match options.get("handle_token") {
-            Some(zvariant::Value::Str(val)) => val,
+            Some(zbus::Variant::Str(val)) => val,
             _ => {
                 return Err(zbus::fdo::Error::InvalidArgs(
                     "Missing handle_token(str)".into(),
@@ -193,20 +189,20 @@ impl RequestPortalFacade {
     async fn response(
         emitter: SignalEmitter<'_>,
         response: u32,
-        results: Vec<HashMap<String, zvariant::Value<'_>>>,
+        results: Vec<HashMap<String, zbus::Variant<'_>>>,
     ) -> zbus::Result<()>;
 }
 
-pub fn make_connection(portal: FilePortal) -> zbus::Result<zbus::blocking::Connection> {
+pub async fn make_connection(portal: FilePortal) -> zbus::Result<zbus::Connection> {
     Builder::session()
-        .unwrap()
-        .name("org.freedesktop.portal.Desktop")?
-        .serve_at("/org/freedesktop/portal/desktop", portal)?
+        .name("org.freedesktop.portal.Desktop")
+        .serve_at("/org/freedesktop/portal/desktop", portal)
         .build()
+        .await
 }
 
-pub fn emit_response(
-    conn: &zbus::blocking::Connection,
+pub async fn emit_response(
+    conn: &zbus::Connection,
     path: ObjectPath<'static>,
     payload: RePayload,
 ) -> zbus::Result<()> {
@@ -217,6 +213,7 @@ pub fn emit_response(
         "Response",
         &payload.into_zvariant(),
     )
+    .await
 }
 
 pub enum RePayload {
@@ -225,13 +222,11 @@ pub enum RePayload {
 }
 
 impl RePayload {
-    fn into_zvariant(
-        self,
-    ) -> zvariant::DynamicTuple<(u32, HashMap<String, zvariant::Value<'static>>)> {
+    fn into_zvariant(self) -> zbus::DynamicTuple<(u32, HashMap<String, zbus::Variant<'static>>)> {
         match self {
-            Self::PickedFiles(path_bufs) => zvariant::DynamicTuple((
+            Self::PickedFiles(path_bufs) => zbus::DynamicTuple((
                 0u32,
-                HashMap::<String, zvariant::Value>::from_iter([(
+                HashMap::<String, zbus::Variant>::from_iter([(
                     "uris".into(),
                     path_bufs
                         .into_iter()
@@ -241,7 +236,7 @@ impl RePayload {
                 )]),
             )),
             Self::UserCancel => {
-                zvariant::DynamicTuple((1u32, HashMap::<String, zvariant::Value>::default()))
+                zbus::DynamicTuple((1u32, HashMap::<String, zbus::Variant>::default()))
             }
         }
     }

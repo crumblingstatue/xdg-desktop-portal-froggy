@@ -9,7 +9,7 @@ mod window;
 
 fn main() -> Result<(), Box<dyn Error>> {
     let (portal, recv) = dbus::make_file_portal();
-    let conn = dbus::make_connection(portal)?;
+    let conn = zbus::block_on(dbus::make_connection(portal))?;
     let mut windows = Vec::new();
     let mut cfg = Config::load_or_default();
     loop {

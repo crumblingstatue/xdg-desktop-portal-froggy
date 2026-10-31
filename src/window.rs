@@ -10,14 +10,13 @@ use {
         },
     },
     std::time::Duration,
-    zbus::zvariant::ObjectPath,
 };
 
 pub struct FileChooserWin {
     dialog: FileDialog,
     win: FBox<RenderWindow>,
     sf_egui: SfEgui,
-    obj_path: ObjectPath<'static>,
+    obj_path: zbus::ObjectPath<'static>,
     exe_path: Option<String>,
 }
 
@@ -111,7 +110,7 @@ pub fn spawn_window(
                     false
                 });
                 let file_filt = FileFilter {
-                    id: egui::Id::new(&filt.name),
+                    id: egui::Id::unique(&filt.name),
                     name: filt.name.clone(),
                     filter,
                 };
@@ -120,7 +119,7 @@ pub fn spawn_window(
             }
             dbus::Mode::Save => {
                 let save_ext = SaveExtension {
-                    id: egui::Id::new(&filt.name),
+                    id: egui::Id::unique(&filt.name),
                     name: filt.name.clone(),
                     file_extension: conv_patterns_to_save_ext(&filt.patterns),
                 };
@@ -158,7 +157,7 @@ pub fn spawn_window(
 
 pub fn update_windows(
     windows: &mut Vec<FileChooserWin>,
-    conn: &zbus::blocking::Connection,
+    conn: &zbus::Connection,
     cfg: &mut crate::Config,
 ) {
     let mut any = false;
@@ -176,16 +175,20 @@ pub fn update_windows(
             .run(&mut win.win, |_rw, ui| {
                 win.dialog.update(ui);
                 if *win.dialog.state() == DialogState::Cancelled {
-                    dbus::emit_response(conn, win.obj_path.clone(), dbus::RePayload::UserCancel)
-                        .unwrap();
+                    zbus::block_on(dbus::emit_response(
+                        conn,
+                        win.obj_path.clone(),
+                        dbus::RePayload::UserCancel,
+                    ))
+                    .unwrap();
                     retain = false;
                 }
                 if let Some(picked) = win.dialog.take_picked() {
-                    dbus::emit_response(
+                    zbus::block_on(dbus::emit_response(
                         conn,
                         win.obj_path.clone(),
                         dbus::RePayload::PickedFiles(vec![picked]),
-                    )
+                    ))
                     .unwrap();
                     retain = false;
                 }
@@ -201,9 +204,11 @@ pub fn update_windows(
             if let Err(e) = cfg.save() {
                 eprintln!("Failed to save config: {e}");
             }
-            conn.object_server()
-                .remove::<dbus::RequestPortalFacade, _>(&win.obj_path)
-                .unwrap();
+            zbus::block_on(
+                conn.object_server()
+                    .remove::<dbus::RequestPortalFacade, _>(&win.obj_path),
+            )
+            .unwrap();
         }
         retain
     });
