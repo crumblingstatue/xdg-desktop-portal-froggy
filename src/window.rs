@@ -9,7 +9,7 @@ use {
             window::{ContextSettings, Event, Style},
         },
     },
-    std::time::Duration,
+    std::{sync::Arc, time::Duration},
 };
 
 pub struct FileChooserWin {
@@ -149,6 +149,9 @@ pub fn spawn_window(
     }
 
     let sf_egui = SfEgui::new(&win);
+    sf_egui
+        .context()
+        .add_font_provider(Arc::new(egui_system_font_frog::SystemFontProvider::new()));
     apply_froggy_style(sf_egui.context());
     windows.push(FileChooserWin {
         dialog,
