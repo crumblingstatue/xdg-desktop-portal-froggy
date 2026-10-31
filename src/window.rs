@@ -115,7 +115,6 @@ pub fn spawn_window(
                     filter,
                 };
                 cfg.file_filters.push(file_filt);
-                cfg.default_file_filter = Some(filt.name);
             }
             dbus::Mode::Save => {
                 let save_ext = SaveExtension {
@@ -127,6 +126,11 @@ pub fn spawn_window(
                 cfg.default_save_extension = Some(filt.name);
             }
         }
+    }
+    // Set the first filter as the default filter.
+    // TODO: Handle `org.freedesktop.portal.FileChooser`'s `current_filter`.
+    if let Some(fst) = cfg.file_filters.first() {
+        cfg.default_file_filter = Some(fst.name.clone());
     }
     match req.mode {
         dbus::Mode::Open => {
