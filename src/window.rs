@@ -179,13 +179,13 @@ pub fn update_windows(windows: &mut Vec<FileChooserWin>, cfg: &mut crate::Config
                 win.dialog.update(ui);
                 if *win.dialog.state() == DialogState::Cancelled {
                     win.sender
-                        .blocking_send(dbus::RePayload::UserCancel.into_zvariant().0)
+                        .blocking_send(dbus::RePayload::UserCancel.into_zvariant())
                         .unwrap();
                     retain = false;
                 }
                 if let Some(picked) = win.dialog.take_picked() {
                     win.sender
-                        .blocking_send(dbus::RePayload::PickedFiles(vec![picked]).into_zvariant().0)
+                        .blocking_send(dbus::RePayload::PickedFiles(vec![picked]).into_zvariant())
                         .unwrap();
                     retain = false;
                 }

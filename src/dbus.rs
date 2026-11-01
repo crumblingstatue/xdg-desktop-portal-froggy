@@ -164,11 +164,9 @@ pub enum RePayload {
 }
 
 impl RePayload {
-    pub fn into_zvariant(
-        self,
-    ) -> zbus::DynamicTuple<(u32, HashMap<String, zbus::Variant<'static>>)> {
+    pub fn into_zvariant(self) -> (u32, HashMap<String, zbus::Variant<'static>>) {
         match self {
-            Self::PickedFiles(path_bufs) => zbus::DynamicTuple((
+            Self::PickedFiles(path_bufs) => (
                 0u32,
                 HashMap::<String, zbus::Variant>::from_iter([(
                     "uris".into(),
@@ -178,10 +176,8 @@ impl RePayload {
                         .collect::<Vec<_>>()
                         .into(),
                 )]),
-            )),
-            Self::UserCancel => {
-                zbus::DynamicTuple((1u32, HashMap::<String, zbus::Variant>::default()))
-            }
+            ),
+            Self::UserCancel => (1u32, HashMap::<String, zbus::Variant>::default()),
         }
     }
 }
