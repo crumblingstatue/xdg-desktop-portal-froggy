@@ -13,10 +13,11 @@ fn main() -> Result<(), Box<dyn Error>> {
     let _join_handle = tokio_rt.spawn(async { dbus::make_connection(portal).await });
     let mut windows = Vec::new();
     let mut cfg = Config::load_or_default();
+    let font_provider = std::sync::Arc::new(egui_system_font_frog::SystemFontProvider::new());
     loop {
         match recv.try_recv() {
             Ok(req) => {
-                window::spawn_window(req, &mut windows, &cfg);
+                window::spawn_window(req, &mut windows, &cfg, font_provider.clone());
             }
             Err(std::sync::mpsc::TryRecvError::Empty) => {}
             Err(e) => {

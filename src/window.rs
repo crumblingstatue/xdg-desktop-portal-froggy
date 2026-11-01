@@ -75,6 +75,7 @@ pub fn spawn_window(
     mut req: dbus::Req,
     windows: &mut Vec<FileChooserWin>,
     frog_cfg: &crate::Config,
+    font_provider: Arc<dyn egui::FontProvider>,
 ) {
     let mut win = RenderWindow::new(
         (640, 412),
@@ -149,9 +150,7 @@ pub fn spawn_window(
     }
 
     let sf_egui = SfEgui::new(&win);
-    sf_egui
-        .context()
-        .add_font_provider(Arc::new(egui_system_font_frog::SystemFontProvider::new()));
+    sf_egui.context().add_font_provider(font_provider);
     apply_froggy_style(sf_egui.context());
     windows.push(FileChooserWin {
         dialog,
