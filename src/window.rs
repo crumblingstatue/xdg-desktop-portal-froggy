@@ -9,15 +9,15 @@ use {
             window::{ContextSettings, Event, Style},
         },
     },
-    std::{sync::Arc, time::Duration},
+    std::{collections::HashMap, sync::Arc, time::Duration},
 };
 
 pub struct FileChooserWin {
     dialog: FileDialog,
     win: FBox<RenderWindow>,
     sf_egui: SfEgui,
-    obj_path: zbus::ObjectPath<'static>,
-    exe_path: Option<String>,
+    app_id: String,
+    pub sender: tokio::sync::mpsc::Sender<(u32, HashMap<String, zbus::Variant<'static>>)>,
 }
 
 fn apply_froggy_style(ctx: &egui::Context) {
@@ -85,9 +85,7 @@ pub fn spawn_window(
     .unwrap();
     win.set_vertical_sync_enabled(true);
     let mut dialog = FileDialog::new();
-    if let Some(exe_path) = &req.exe_path
-        && let Some(storage) = frog_cfg.per_app_file_dia_storage.get(exe_path)
-    {
+    if let Some(storage) = frog_cfg.per_app_file_dia_storage.get(&req.app_id) {
         *dialog.storage_mut() = storage.clone();
     }
     let cfg = dialog.config_mut();
@@ -157,16 +155,12 @@ pub fn spawn_window(
         dialog,
         win,
         sf_egui,
-        obj_path: req.obj_path,
-        exe_path: req.exe_path,
+        app_id: req.app_id.clone(),
+        sender: req.sender,
     });
 }
 
-pub fn update_windows(
-    windows: &mut Vec<FileChooserWin>,
-    conn: &zbus::Connection,
-    cfg: &mut crate::Config,
-) {
+pub fn update_windows(windows: &mut Vec<FileChooserWin>, cfg: &mut crate::Config) {
     let mut any = false;
     windows.retain_mut(|win| {
         let mut retain = true;
@@ -182,21 +176,15 @@ pub fn update_windows(
             .run(&mut win.win, |_rw, ui| {
                 win.dialog.update(ui);
                 if *win.dialog.state() == DialogState::Cancelled {
-                    zbus::block_on(dbus::emit_response(
-                        conn,
-                        win.obj_path.clone(),
-                        dbus::RePayload::UserCancel,
-                    ))
-                    .unwrap();
+                    win.sender
+                        .blocking_send(dbus::RePayload::UserCancel.into_zvariant().0)
+                        .unwrap();
                     retain = false;
                 }
                 if let Some(picked) = win.dialog.take_picked() {
-                    zbus::block_on(dbus::emit_response(
-                        conn,
-                        win.obj_path.clone(),
-                        dbus::RePayload::PickedFiles(vec![picked]),
-                    ))
-                    .unwrap();
+                    win.sender
+                        .blocking_send(dbus::RePayload::PickedFiles(vec![picked]).into_zvariant().0)
+                        .unwrap();
                     retain = false;
                 }
             })
@@ -204,18 +192,13 @@ pub fn update_windows(
         win.sf_egui.draw(di, &mut win.win, None);
         win.win.display();
         if !retain {
-            if let Some(exe_path) = &win.exe_path {
+            if !win.app_id.is_empty() {
                 cfg.per_app_file_dia_storage
-                    .insert(exe_path.clone(), win.dialog.storage_mut().clone());
+                    .insert(win.app_id.clone(), win.dialog.storage_mut().clone());
             }
             if let Err(e) = cfg.save() {
                 eprintln!("Failed to save config: {e}");
             }
-            zbus::block_on(
-                conn.object_server()
-                    .remove::<dbus::RequestPortalFacade, _>(&win.obj_path),
-            )
-            .unwrap();
         }
         retain
     });

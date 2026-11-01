@@ -9,7 +9,8 @@ mod window;
 
 fn main() -> Result<(), Box<dyn Error>> {
     let (portal, recv) = dbus::make_file_portal();
-    let conn = zbus::block_on(dbus::make_connection(portal))?;
+    let tokio_rt = tokio::runtime::Runtime::new().unwrap();
+    let _join_handle = tokio_rt.spawn(async { dbus::make_connection(portal).await });
     let mut windows = Vec::new();
     let mut cfg = Config::load_or_default();
     loop {
@@ -22,6 +23,6 @@ fn main() -> Result<(), Box<dyn Error>> {
                 eprintln!("Recv Error: {e}");
             }
         }
-        window::update_windows(&mut windows, &conn, &mut cfg);
+        window::update_windows(&mut windows, &mut cfg);
     }
 }

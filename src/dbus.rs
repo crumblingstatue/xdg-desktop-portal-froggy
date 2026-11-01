@@ -3,10 +3,7 @@
 
 use {
     std::{collections::HashMap, path::PathBuf},
-    zbus::{
-        ObjectPath, ObjectServer, conn::Builder, message::Header, names::BusName,
-        object_server::SignalEmitter,
-    },
+    zbus::{ObjectPath, conn::Builder, message::Header, names::BusName},
 };
 
 pub struct FilePortal {
@@ -30,11 +27,10 @@ pub struct Req {
     /// Whether the thing we want to open is a directory
     pub dir: bool,
     pub title: String,
-    pub obj_path: ObjectPath<'static>,
     pub filters: Vec<Filter>,
     pub suggested_save_name: String,
-    /// Path of executable making the request. Can be used to uniquely identify the application
-    pub exe_path: Option<String>,
+    pub app_id: String,
+    pub sender: tokio::sync::mpsc::Sender<(u32, HashMap<String, zbus::Variant<'static>>)>,
 }
 
 #[derive(Debug)]
@@ -66,97 +62,54 @@ impl Filter {
 }
 
 type DBusFilt = (String, Vec<(u32, String)>);
-
-#[zbus::interface(name = "org.freedesktop.portal.FileChooser")]
+#[zbus::interface(name = "org.freedesktop.impl.portal.FileChooser")]
 impl FilePortal {
+    #[expect(clippy::too_many_arguments)]
     async fn open_file(
         &self,
         #[zbus(connection)] connection: &zbus::Connection,
         #[zbus(header)] hdr: Header<'_>,
-        #[zbus(object_server)] server: &ObjectServer,
+        handle: ObjectPath<'_>,
+        app_id: &str,
         _parent_window: &str,
         title: &str,
         options: HashMap<&str, zbus::Variant<'_>>,
-    ) -> Result<ObjectPath<'_>, zbus::fdo::Error> {
-        self.fun(connection, hdr, server, title, options, Mode::Open)
+    ) -> zbus::fdo::Result<(u32, HashMap<String, zbus::Variant<'static>>)> {
+        self.fun(connection, hdr, handle, app_id, title, options, Mode::Open)
             .await
     }
+    #[expect(clippy::too_many_arguments)]
     async fn save_file(
         &self,
         #[zbus(connection)] connection: &zbus::Connection,
         #[zbus(header)] hdr: Header<'_>,
-        #[zbus(object_server)] server: &ObjectServer,
+        handle: ObjectPath<'_>,
+        app_id: &str,
         _parent_window: &str,
         title: &str,
         options: HashMap<&str, zbus::Variant<'_>>,
-    ) -> Result<ObjectPath<'_>, zbus::fdo::Error> {
-        self.fun(connection, hdr, server, title, options, Mode::Save)
+    ) -> zbus::fdo::Result<(u32, HashMap<String, zbus::Variant<'static>>)> {
+        self.fun(connection, hdr, handle, app_id, title, options, Mode::Save)
             .await
     }
 }
 
-async fn get_pid(connection: &zbus::Connection, sender: &str) -> zbus::Result<u32> {
-    let proxy = zbus::Proxy::new(
-        connection,
-        "org.freedesktop.DBus",
-        "/org/freedesktop/DBus",
-        "org.freedesktop.DBus",
-    )
-    .await?;
-
-    let pid: u32 = proxy.call("GetConnectionUnixProcessID", &(sender)).await?;
-
-    Ok(pid)
-}
-
-fn app_path_from_pid(pid: u32) -> Option<String> {
-    std::fs::read_link(format!("/proc/{pid}/exe"))
-        .ok()
-        .map(|p| p.to_string_lossy().into_owned())
-}
-
 impl FilePortal {
+    #[expect(clippy::too_many_arguments)]
     async fn fun(
         &self,
-        connection: &zbus::Connection,
-        hdr: Header<'_>,
-        server: &ObjectServer,
+        _connection: &zbus::Connection,
+        _hdr: Header<'_>,
+        handle: ObjectPath<'_>,
+        app_id: &str,
         title: &str,
         options: HashMap<&str, zbus::Variant<'_>>,
         mode: Mode,
-    ) -> Result<ObjectPath<'_>, zbus::fdo::Error> {
-        let sender = hdr.sender().unwrap();
-        let mut sender = sender.to_string();
-        let exe_path: Option<String> = {
-            let pid = get_pid(connection, &sender).await;
-            match pid {
-                Ok(pid) => app_path_from_pid(pid),
-                Err(e) => {
-                    eprintln!("{e}");
-                    None
-                }
-            }
-        };
-
-        sender = sender.strip_prefix(":").unwrap().replace('.', "_");
-
-        let token: &str = match options.get("handle_token") {
-            Some(zbus::Variant::Str(val)) => val,
-            _ => {
-                return Err(zbus::fdo::Error::InvalidArgs(
-                    "Missing handle_token(str)".into(),
-                ));
-            }
-        };
+    ) -> zbus::fdo::Result<(u32, HashMap<String, zbus::Variant<'static>>)> {
         let filters = options.get("filters").map_or_else(Vec::new, |val| {
             let filters: Vec<DBusFilt> = val.clone().try_into().unwrap();
             filters.into_iter().filter_map(Filter::from_dbus).collect()
         });
-        let path = ObjectPath::try_from(format!(
-            "/org/freedesktop/portal/desktop/request/{sender}/{token}"
-        ))
-        .unwrap();
-        server.at(&path, RequestPortalFacade).await.unwrap();
         let suggested_save_name = options.get("current_name").map_or_else(String::new, |val| {
             let name: String = val.clone().try_into().unwrap();
             name
@@ -164,56 +117,28 @@ impl FilePortal {
         let dir = options
             .get("directory")
             .is_some_and(|val| val.try_into().unwrap());
+        let (send, mut recv) = tokio::sync::mpsc::channel(1);
         self.sender
             .send(Req {
                 title: title.to_owned(),
-                obj_path: path.clone(),
                 filters,
                 mode,
                 dir,
                 suggested_save_name,
-                exe_path,
+                app_id: app_id.to_owned(),
+                sender: send,
             })
             .unwrap();
-        Ok(path)
+        Ok(recv.recv().await.unwrap())
     }
-}
-
-pub struct RequestPortalFacade;
-
-#[zbus::interface(name = "org.freedesktop.portal.Request")]
-impl RequestPortalFacade {
-    #[allow(clippy::unused_self)]
-    const fn close(&self) {}
-    #[zbus(signal)]
-    async fn response(
-        emitter: SignalEmitter<'_>,
-        response: u32,
-        results: Vec<HashMap<String, zbus::Variant<'_>>>,
-    ) -> zbus::Result<()>;
 }
 
 pub async fn make_connection(portal: FilePortal) -> zbus::Result<zbus::Connection> {
     Builder::session()
-        .name("org.freedesktop.portal.Desktop")
+        .name("org.freedesktop.impl.portal.desktop.froggy")
         .serve_at("/org/freedesktop/portal/desktop", portal)
         .build()
         .await
-}
-
-pub async fn emit_response(
-    conn: &zbus::Connection,
-    path: ObjectPath<'static>,
-    payload: RePayload,
-) -> zbus::Result<()> {
-    conn.emit_signal(
-        Option::<BusName>::None,
-        path,
-        "org.freedesktop.portal.Request",
-        "Response",
-        &payload.into_zvariant(),
-    )
-    .await
 }
 
 pub enum RePayload {
@@ -222,7 +147,9 @@ pub enum RePayload {
 }
 
 impl RePayload {
-    fn into_zvariant(self) -> zbus::DynamicTuple<(u32, HashMap<String, zbus::Variant<'static>>)> {
+    pub fn into_zvariant(
+        self,
+    ) -> zbus::DynamicTuple<(u32, HashMap<String, zbus::Variant<'static>>)> {
         match self {
             Self::PickedFiles(path_bufs) => zbus::DynamicTuple((
                 0u32,
