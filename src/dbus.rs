@@ -1,9 +1,11 @@
 // zbus shenanigans
 #![allow(clippy::used_underscore_binding)]
 
+use std::fmt::Write as _;
+
 use {
     std::{collections::HashMap, path::PathBuf},
-    zbus::{ObjectPath, conn::Builder, message::Header, names::BusName},
+    zbus::{ObjectPath, conn::Builder, message::Header},
 };
 
 pub struct FilePortal {
@@ -29,7 +31,7 @@ pub struct Req {
     pub title: String,
     pub filters: Vec<Filter>,
     pub suggested_save_name: String,
-    pub app_id: String,
+    pub app_unique_id: Option<String>,
     pub sender: tokio::sync::mpsc::Sender<(u32, HashMap<String, zbus::Variant<'static>>)>,
 }
 
@@ -61,6 +63,17 @@ impl Filter {
     }
 }
 
+use x11rb::{properties::WmClass, protocol::xproto::Window};
+
+fn get_wm_class(window: Window) -> Result<String, Box<dyn std::error::Error>> {
+    let (conn, _) = x11rb::connect(None)?;
+
+    WmClass::get(&conn, window)?.reply()?.map_or_else(
+        || Err("Failed to get WM class".into()),
+        |wm_class| Ok(String::from_utf8_lossy(wm_class.class()).into_owned()),
+    )
+}
+
 type DBusFilt = (String, Vec<(u32, String)>);
 #[zbus::interface(name = "org.freedesktop.impl.portal.FileChooser")]
 impl FilePortal {
@@ -71,12 +84,21 @@ impl FilePortal {
         #[zbus(header)] hdr: Header<'_>,
         handle: ObjectPath<'_>,
         app_id: &str,
-        _parent_window: &str,
+        parent_window: &str,
         title: &str,
         options: HashMap<&str, zbus::Variant<'_>>,
     ) -> zbus::fdo::Result<(u32, HashMap<String, zbus::Variant<'static>>)> {
-        self.fun(connection, hdr, handle, app_id, title, options, Mode::Open)
-            .await
+        self.fun(
+            connection,
+            hdr,
+            handle,
+            app_id,
+            parent_window,
+            title,
+            options,
+            Mode::Open,
+        )
+        .await
     }
     #[expect(clippy::too_many_arguments)]
     async fn save_file(
@@ -85,12 +107,21 @@ impl FilePortal {
         #[zbus(header)] hdr: Header<'_>,
         handle: ObjectPath<'_>,
         app_id: &str,
-        _parent_window: &str,
+        parent_window: &str,
         title: &str,
         options: HashMap<&str, zbus::Variant<'_>>,
     ) -> zbus::fdo::Result<(u32, HashMap<String, zbus::Variant<'static>>)> {
-        self.fun(connection, hdr, handle, app_id, title, options, Mode::Save)
-            .await
+        self.fun(
+            connection,
+            hdr,
+            handle,
+            app_id,
+            parent_window,
+            title,
+            options,
+            Mode::Save,
+        )
+        .await
     }
 }
 
@@ -100,8 +131,9 @@ impl FilePortal {
         &self,
         _connection: &zbus::Connection,
         _hdr: Header<'_>,
-        handle: ObjectPath<'_>,
-        app_id: &str,
+        _handle: ObjectPath<'_>,
+        xdg_app_id: &str,
+        parent_window: &str,
         title: &str,
         options: HashMap<&str, zbus::Variant<'_>>,
         mode: Mode,
@@ -118,6 +150,19 @@ impl FilePortal {
             .get("directory")
             .is_some_and(|val| val.try_into().unwrap());
         let (send, mut recv) = tokio::sync::mpsc::channel(1);
+        let mut app_unique_id: Option<String> = None;
+        if !xdg_app_id.is_empty() {
+            write!(app_unique_id.get_or_insert_default(), "id:{xdg_app_id};").unwrap();
+        }
+        if let Some(mut x11_win_id) = parent_window.strip_prefix("x11:") {
+            // Strip 0x prefix if necessary
+            if let Some(prefix) = x11_win_id.strip_prefix("0x") {
+                x11_win_id = prefix;
+            }
+            let id = u32::from_str_radix(x11_win_id.trim(), 16).unwrap();
+            let wm_class = get_wm_class(id).unwrap();
+            write!(app_unique_id.get_or_insert_default(), "class:{wm_class};").unwrap();
+        }
         self.sender
             .send(Req {
                 title: title.to_owned(),
@@ -125,7 +170,7 @@ impl FilePortal {
                 mode,
                 dir,
                 suggested_save_name,
-                app_id: app_id.to_owned(),
+                app_unique_id,
                 sender: send,
             })
             .unwrap();

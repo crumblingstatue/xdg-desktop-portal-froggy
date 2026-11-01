@@ -16,7 +16,7 @@ pub struct FileChooserWin {
     dialog: FileDialog,
     win: FBox<RenderWindow>,
     sf_egui: SfEgui,
-    app_id: String,
+    app_unique_id: Option<String>,
     pub sender: tokio::sync::mpsc::Sender<(u32, HashMap<String, zbus::Variant<'static>>)>,
 }
 
@@ -85,7 +85,9 @@ pub fn spawn_window(
     .unwrap();
     win.set_vertical_sync_enabled(true);
     let mut dialog = FileDialog::new();
-    if let Some(storage) = frog_cfg.per_app_file_dia_storage.get(&req.app_id) {
+    if let Some(id) = &req.app_unique_id
+        && let Some(storage) = frog_cfg.per_app_file_dia_storage.get(id)
+    {
         *dialog.storage_mut() = storage.clone();
     }
     let cfg = dialog.config_mut();
@@ -155,7 +157,7 @@ pub fn spawn_window(
         dialog,
         win,
         sf_egui,
-        app_id: req.app_id.clone(),
+        app_unique_id: req.app_unique_id,
         sender: req.sender,
     });
 }
@@ -192,9 +194,9 @@ pub fn update_windows(windows: &mut Vec<FileChooserWin>, cfg: &mut crate::Config
         win.sf_egui.draw(di, &mut win.win, None);
         win.win.display();
         if !retain {
-            if !win.app_id.is_empty() {
+            if let Some(id) = &win.app_unique_id {
                 cfg.per_app_file_dia_storage
-                    .insert(win.app_id.clone(), win.dialog.storage_mut().clone());
+                    .insert(id.clone(), win.dialog.storage_mut().clone());
             }
             if let Err(e) = cfg.save() {
                 eprintln!("Failed to save config: {e}");

@@ -1682,6 +1682,7 @@ dependencies = [
  "ron",
  "serde",
  "tokio",
+ "x11rb",
  "zbus",
 ]
 
