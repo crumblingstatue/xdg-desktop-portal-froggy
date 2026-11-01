@@ -5,7 +5,7 @@ use std::fmt::Write as _;
 
 use {
     std::{collections::HashMap, path::PathBuf},
-    zbus::{ObjectPath, conn::Builder, message::Header},
+    zbus::{ObjectPath, conn::Builder},
 };
 
 pub struct FilePortal {
@@ -77,61 +77,33 @@ fn get_wm_class(window: Window) -> Result<String, Box<dyn std::error::Error>> {
 type DBusFilt = (String, Vec<(u32, String)>);
 #[zbus::interface(name = "org.freedesktop.impl.portal.FileChooser")]
 impl FilePortal {
-    #[expect(clippy::too_many_arguments)]
     async fn open_file(
         &self,
-        #[zbus(connection)] connection: &zbus::Connection,
-        #[zbus(header)] hdr: Header<'_>,
-        handle: ObjectPath<'_>,
+        _handle: ObjectPath<'_>,
         app_id: &str,
         parent_window: &str,
         title: &str,
         options: HashMap<&str, zbus::Variant<'_>>,
     ) -> zbus::fdo::Result<(u32, HashMap<String, zbus::Variant<'static>>)> {
-        self.fun(
-            connection,
-            hdr,
-            handle,
-            app_id,
-            parent_window,
-            title,
-            options,
-            Mode::Open,
-        )
-        .await
+        self.fun(app_id, parent_window, title, options, Mode::Open)
+            .await
     }
-    #[expect(clippy::too_many_arguments)]
     async fn save_file(
         &self,
-        #[zbus(connection)] connection: &zbus::Connection,
-        #[zbus(header)] hdr: Header<'_>,
-        handle: ObjectPath<'_>,
+        _handle: ObjectPath<'_>,
         app_id: &str,
         parent_window: &str,
         title: &str,
         options: HashMap<&str, zbus::Variant<'_>>,
     ) -> zbus::fdo::Result<(u32, HashMap<String, zbus::Variant<'static>>)> {
-        self.fun(
-            connection,
-            hdr,
-            handle,
-            app_id,
-            parent_window,
-            title,
-            options,
-            Mode::Save,
-        )
-        .await
+        self.fun(app_id, parent_window, title, options, Mode::Save)
+            .await
     }
 }
 
 impl FilePortal {
-    #[expect(clippy::too_many_arguments)]
     async fn fun(
         &self,
-        _connection: &zbus::Connection,
-        _hdr: Header<'_>,
-        _handle: ObjectPath<'_>,
         xdg_app_id: &str,
         parent_window: &str,
         title: &str,
